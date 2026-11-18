@@ -16,8 +16,11 @@
   --ui:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme:dark;
 }
-html{background:var(--bg);scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--ink);overflow-x:hidden}
+html{background:#000;scroll-behavior:smooth}
+body{margin:0;background:transparent;color:var(--ink);overflow-x:hidden}
+/* vídeo de fundo do site inteiro: no topo ele vai para dentro do WebGL (refratado pelo vidro); nas seções aparece escurecido */
+#bgv{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;background:#000}
+#bgshade{position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(3,4,6,.72),rgba(3,4,6,.82));pointer-events:none}
 [hidden]{display:none!important}
 #hero{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;isolation:isolate}
 body{font-family:var(--ui);-webkit-font-smoothing:antialiased}
@@ -259,6 +262,8 @@ footer.ft b{color:#fff;font-weight:600}
 </style>
 </head>
 <body>
+<video id="bgv" src="fundo.mp4" poster="fundo-poster.webp" autoplay muted loop playsinline preload="auto" aria-hidden="true"></video>
+<div id="bgshade" aria-hidden="true"></div>
 <div id="ring" aria-hidden="true"><i></i></div>
 <div id="cur" aria-hidden="true"></div>
 <section id="hero" aria-label="Vital Vidros e Esquadrias">
@@ -438,6 +443,9 @@ footer.ft b{color:#fff;font-weight:600}
 <script>
 /* Versão estática e suas duas ações. Funciona mesmo se o módulo WebGL não carregar. */
 (function(){
+  var v=document.getElementById('bgv');
+  if(v&&matchMedia('(prefers-reduced-motion: reduce)').matches){ v.removeAttribute('autoplay'); v.pause(); }
+  else if(v){ var pp=v.play(); if(pp&&pp.catch) pp.catch(function(){}); }
   var b=document.body;
   window.__facetStatic=function(){b.classList.add('static');};
   setTimeout(function(){ if(!window.__facetBoot) window.__facetStatic(); },6000);
@@ -759,32 +767,12 @@ function makeGlass(o={}){
 }
 
 /* ---------- fundo: fachada noturna com névoa, para o vidro ter o que refratar ---------- */
-const bgMat=new THREE.ShaderMaterial({
-  uniforms:{uT:{value:0},uS:{value:1}},
-  vertexShader:`varying vec2 vP; void main(){ vP=(modelMatrix*vec4(position,1.0)).xy; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader:`varying vec2 vP; uniform float uT; uniform float uS;
-    float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-    float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
-    float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<5;i++){s+=a*n(p);p*=2.03;a*=.5;}return s;}
-    void main(){
-      vec2 p=vP/uS;
-      float fog=smoothstep(.32,.95,fbm(p*.0014+vec2(uT*.016,-uT*.009)));
-      vec3 col=vec3(.0015,.0016,.002)+vec3(.009,.015,.016)*fog;
-      vec2 cell=vec2(260.,170.);
-      vec2 g=abs(fract(p/cell+.5)-.5)*cell;
-      float line=max(1.-smoothstep(0.,2.6,g.x),1.-smoothstep(0.,1.8,g.y));
-      vec2 id=floor(p/cell+.5);
-      float lit=step(.86,h(id))*(.5+.5*sin(uT*.35+h(id+3.)*6.28));
-      float inside=(1.-line)*lit*smoothstep(0.,40.,min(g.x,g.y));
-      float sweep=exp(-pow((p.x+p.y*.4-mod(uT*55.,5200.)+2600.)/520.,2.));
-      col+=vec3(.010,.014,.015)*line*(.4+fog)+vec3(.03,.042,.044)*line*sweep;
-      col+=vec3(.006,.005,.0035)*inside*(1.-fog*.5);
-      gl_FragColor=vec4(col,1.);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-    }`,
-  depthWrite:false
-});
+const bgVid=document.getElementById('bgv');
+const bgTex=new THREE.VideoTexture(bgVid); bgTex.colorSpace=THREE.SRGBColorSpace;
+const bgMat=new THREE.MeshBasicMaterial({map:bgTex,color:0xd6d6d6,toneMapped:false,depthWrite:false});
+function fitBg(){ const pa=W/H, va=(bgVid.videoWidth||1600)/(bgVid.videoHeight||894);
+  if(pa<va){ bgTex.repeat.set(pa/va,1); bgTex.offset.set((1-pa/va)/2,0); } else { bgTex.repeat.set(1,va/pa); bgTex.offset.set(0,(1-va/pa)/2); } }
+bgVid.addEventListener('loadedmetadata',()=>{ if(W) fitBg(); });
 const bg=new THREE.Mesh(new THREE.PlaneGeometry(1,1),bgMat);
 bg.position.z=-700; scene.add(bg);
 
@@ -1188,7 +1176,7 @@ function doLayout(){
   depth=13*G; bev=2.6*G; rad=20*G; cut=14*G;
   pieces.forEach(p=>setGlassScale(p.mat)); setGlassScale(slMat);
   const zb=camera.position.z-bg.position.z, hh=2*zb*Math.tan(15*D2R)*1.25;
-  bg.scale.set(hh*W/H,hh,1); bgMat.uniforms.uS.value=Math.max(S,.5);
+  bg.scale.set(hh*W/H,hh,1); fitBg();
   cdpr=Math.max(1.5,Math.min(devicePixelRatio||1,2));
   pageCanvas.width=Math.round(bw*cdpr); pageCanvas.height=Math.round(bh*cdpr);
   if(tex) tex.dispose();
@@ -1311,7 +1299,6 @@ function frame(){
   tilt.x+=((ptr.in?ptr.x:0)-tilt.x)*kT; tilt.y+=((ptr.in?ptr.y:0)-tilt.y)*kT;
   block.rotation.set((-tilt.y*5.5+.8)*D2R,(tilt.x*7-1.2)*D2R,0);
   block.updateMatrixWorld(true);
-  bgMat.uniforms.uT.value=now;
 
   // ponteiro no plano da placa
   ndc.set(ptr.x,ptr.y); ray.setFromCamera(ndc,camera);
