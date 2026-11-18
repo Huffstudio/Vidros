@@ -1,4 +1,4 @@
-# Vital Vidros e Esquadrias
+# Vidros e Esquadrias
 
 Site de demonstração de uma vidraçaria **fictícia**. Textos, números e contatos são ilustrativos.
 
